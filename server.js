@@ -136,6 +136,15 @@ initDatabase();
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
+// Simple PIN-based middleware for protected routes
+const POS_PIN = process.env.POS_PIN || '1234';
+function checkAuth(req, res, next) {
+  const pin = String(req.headers['x-pos-pin'] || '');
+  if (pin !== POS_PIN) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/scanner-socket' });
 const scannerSessions = new Map();
@@ -258,7 +267,7 @@ app.get('/api/products', (req, res) => {
   });
 });
 
-app.post('/api/products', (req, res) => {
+app.post('/api/products', checkAuth, (req, res) => {
   const { name, sku, barcode, category, price, stock, image, description, cost, threshold } = req.body;
 
   if (!name || !sku || !barcode || !category) {
@@ -281,7 +290,7 @@ app.post('/api/products', (req, res) => {
   );
 });
 
-app.put('/api/products/:id', (req, res) => {
+app.put('/api/products/:id', checkAuth, (req, res) => {
   const id = req.params.id;
   const { name, sku, barcode, category, price, stock, image, description, cost, threshold } = req.body;
 
@@ -305,7 +314,7 @@ app.put('/api/products/:id', (req, res) => {
   );
 });
 
-app.delete('/api/products/:id', (req, res) => {
+app.delete('/api/products/:id', checkAuth, (req, res) => {
   const id = req.params.id;
   db.run('DELETE FROM products WHERE id = ?', [id], function (err) {
     if (err) {
@@ -319,7 +328,7 @@ app.delete('/api/products/:id', (req, res) => {
   });
 });
 
-app.post('/api/checkout', (req, res) => {
+app.post('/api/checkout', checkAuth, (req, res) => {
   const items = Array.isArray(req.body.items) ? req.body.items : [];
   const paymentMethod = String(req.body.paymentMethod || 'Unknown');
   const discountPercent = Number(req.body.discountPercent || 0);
@@ -364,6 +373,20 @@ app.post('/api/checkout', (req, res) => {
           console.error('Checkout items insert failed:', err2.message);
           return res.status(500).json({ error: 'Unable to save transaction items' });
         }
+
+        // Decrement stock for each item sold
+        items.forEach((item) => {
+          db.run(
+            'UPDATE products SET stock = stock - ? WHERE id = ?',
+            [item.quantity, item.productId],
+            (stockErr) => {
+              if (stockErr) {
+                console.error(`Failed to update stock for product ${item.productId}:`, stockErr.message);
+              }
+            }
+          );
+        });
+
         res.json({ transactionId, total, subtotal, discount, tax });
       });
     }
