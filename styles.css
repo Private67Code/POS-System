@@ -438,6 +438,13 @@ img {
 .cart-panel {
   display: grid;
   gap: var(--space-lg);
+  /* Keep the order summary visible while scrolling the product list */
+  position: sticky;
+  top: calc(var(--space-lg) + 10px);
+  align-self: start;
+  max-height: calc(100vh - (var(--space-lg) + 20px));
+  overflow: auto;
+  z-index: 5;
 }
 
 .cart-status,
