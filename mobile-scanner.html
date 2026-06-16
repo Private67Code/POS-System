@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POS Phone Scanner</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand-group">
+        <span class="brand-badge">Scanner</span>
+        <div>
+          <h1>Mobile Scanner</h1>
+          <p class="subheading">Scan barcodes from your phone and send them to the POS.</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="page active mobile-scanner-page">
+      <section class="scanner-preview-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Phone Scanner</p>
+            <h2>Camera feed</h2>
+          </div>
+        </div>
+        <div class="scanner-video-card">
+          <video id="videoPreview" muted playsinline autoplay></video>
+          <div class="scanner-overlay">
+            <span id="scannerConnectionStatus">Connecting...</span>
+          </div>
+        </div>
+        <div class="scanner-status-message" id="cameraPermissionMessage">
+          <p>Tap the button below to enable your camera. If you don’t see a prompt, refresh the page and allow access.</p>
+        </div>
+        <div class="scanner-actions">
+          <button class="primary-button" type="button" id="scannerStartButton">Start Camera</button>
+          <button class="primary-button secondary" type="button" id="scannerRestartButton">Restart Camera</button>
+          <button class="secondary-button danger" type="button" id="scannerDisconnectButton">Disconnect</button>
+        </div>
+        <div class="scanner-session-card">
+          <div class="scanner-block">
+            <span>Session ID</span>
+            <strong id="scannerSessionId">--</strong>
+          </div>
+          <div class="scanner-block">
+            <span>Last scan</span>
+            <strong id="lastScanValue">None yet</strong>
+          </div>
+          <div class="scanner-block">
+            <span>Server</span>
+            <strong id="scannerServerUrl">--</strong>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/umd/zxing-browser.min.js"></script>
+  <script src="mobile-scanner.js"></script>
+</body>
+</html>

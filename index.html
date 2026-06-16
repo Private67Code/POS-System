@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Retail POS System</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand-group">
+        <span class="brand-badge">POS</span>
+        <div>
+          <h1>Retail POS System</h1>
+          <p class="subheading">Fast checkout and inventory management with modern retail controls.</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="page page-pos active" id="posPage">
+      <div class="pos-layout">
+        <section class="pos-panel" aria-labelledby="pos-heading">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Point of Sale</p>
+              <h2 id="pos-heading">Checkout</h2>
+            </div>
+          </div>
+
+          <div class="search-row">
+            <label class="field-group">
+              <span>Search products</span>
+              <input id="productSearchInput" type="search" placeholder="Search by name, SKU, or barcode" oninput="searchProducts()" />
+            </label>
+            <label class="field-group field-group-barcode">
+              <span>Scan barcode</span>
+              <input id="barcodeInput" type="text" placeholder="Scan or type barcode" onkeydown="handleBarcodeKeydown(event)" />
+            </label>
+          </div>
+
+          <div class="category-pills" id="categoryPills" role="tablist" aria-label="Product categories"></div>
+
+          <section class="scanner-panel" aria-label="Phone scanner pairing">
+            <div class="scanner-panel-header">
+              <div>
+                <p class="eyebrow">Phone Scanner</p>
+                <h3>Connect a mobile barcode scanner</h3>
+              </div>
+              <button class="secondary-button" type="button" id="connectScannerButton">Connect Phone Scanner</button>
+            </div>
+            <div class="scanner-status-row">
+              <span>Status:</span>
+              <strong id="scannerStatusText">Disconnected</strong>
+            </div>
+            <div class="scanner-details hidden" id="scannerDetails">
+              <p class="scanner-instruction">Scan this QR code with your phone to open the scanning page.</p>
+              <div class="qr-code-box" id="scannerQrCode"></div>
+              <p class="scanner-note">Session ID: <span id="scannerSessionId"></span></p>
+              <button class="secondary-button" type="button" id="disconnectScannerButton">End Pairing</button>
+            </div>
+          </section>
+
+          <div class="section-title-row">
+            <h3>Featured products</h3>
+            <span>Quick add items for fast checkout.</span>
+          </div>
+
+          <div class="product-grid" id="productGrid" aria-label="Product catalogue"></div>
+        </section>
+
+        <aside class="cart-panel" aria-labelledby="cart-heading">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Order Summary</p>
+              <h2 id="cart-heading">Shopping Cart</h2>
+            </div>
+          </div>
+
+          <div class="cart-status">
+            <p class="cart-count" id="cartCount">0 items</p>
+            <p class="cart-note" id="cartNote">Add items from the left panel to build an order.</p>
+          </div>
+
+          <div class="cart-items" id="cartItemsContainer" aria-label="Cart items">
+            <div class="table-note">Your cart is empty. Add items from the product list to begin.</div>
+          </div>
+
+          <div class="summary-card">
+            <div class="summary-row">
+              <span>Subtotal</span>
+              <span id="subtotalAmount">$0.00</span>
+            </div>
+            <div class="summary-row">
+              <span>Discount</span>
+              <span id="discountAmount">$0.00</span>
+            </div>
+            <div class="summary-row">
+              <span>Tax</span>
+              <span id="taxAmount">$0.00</span>
+            </div>
+            <div class="summary-row total-row">
+              <span>Total</span>
+              <span id="totalAmount">$0.00</span>
+            </div>
+          </div>
+
+          <div class="payment-grid">
+            <button class="payment-button payment-cash" type="button" onclick="processCashPayment()">Cash</button>
+            <button class="payment-button payment-card" type="button" onclick="processCardPayment()">Card</button>
+            <button class="payment-button payment-wallet" type="button" onclick="processDigitalWalletPayment()">Digital Wallet</button>
+          </div>
+
+          <div class="secondary-actions">
+            <button class="secondary-button" type="button" onclick="holdTransaction()">Hold Transaction</button>
+            <button class="secondary-button danger" type="button" onclick="clearCart()">Clear Cart</button>
+          </div>
+        </aside>
+      </div>
+
+      <button class="fixed-inventory-button" type="button" onclick="toggleView('inventory')">Inventory Manager</button>
+    </main>
+
+    <main class="page page-inventory" id="inventoryPage" hidden>
+      <div class="inventory-layout">
+        <aside class="inventory-sidebar" aria-label="Inventory navigation">
+          <div class="sidebar-brand">Inventory</div>
+          <button class="sidebar-link active" type="button">Inventory</button>
+          <button class="sidebar-link" type="button">Customers</button>
+          <button class="sidebar-link" type="button">Employees</button>
+          <button class="sidebar-link" type="button">Sales History</button>
+          <button class="sidebar-link" type="button">Reports</button>
+          <button class="sidebar-link" type="button">Settings</button>
+          <button class="sidebar-link" type="button">Suppliers</button>
+          <button class="sidebar-link" type="button">Purchase Orders</button>
+        </aside>
+
+        <section class="inventory-main">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Inventory Management</p>
+              <h2>Catalog & Controls</h2>
+            </div>
+            <div class="panel-actions">
+              <button class="primary-button" type="button" onclick="openAddProductModal()">+ Add Product</button>
+              <button class="secondary-button" type="button" onclick="toggleView('pos')">Back to POS</button>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div class="dashboard-card">
+              <span>Total Products</span>
+              <strong id="totalProductsCount">0</strong>
+            </div>
+            <div class="dashboard-card">
+              <span>Total Categories</span>
+              <strong id="totalCategoriesCount">0</strong>
+            </div>
+            <div class="dashboard-card">
+              <span>Low Stock Products</span>
+              <strong id="lowStockCount">0</strong>
+            </div>
+            <div class="dashboard-card">
+              <span>Out of Stock Products</span>
+              <strong id="outOfStockCount">0</strong>
+            </div>
+          </div>
+
+          <div class="inventory-tools">
+            <label class="field-group">
+              <span>Search products</span>
+              <input id="inventorySearch" type="search" placeholder="Search by name, SKU, or barcode" oninput="searchProducts()" />
+            </label>
+            <div class="filter-buttons" id="inventoryFilters">
+              <button class="pill active" type="button" data-value="all" onclick="filterStock('all')">All Products</button>
+              <button class="pill" type="button" data-value="low" onclick="filterStock('low')">Low Stock</button>
+              <button class="pill" type="button" data-value="out" onclick="filterStock('out')">Out of Stock</button>
+            </div>
+          </div>
+
+          <div class="table-panel" role="region" aria-label="Product inventory table">
+            <table class="inventory-table">
+              <thead>
+                <tr>
+                  <th scope="col">Image</th>
+                  <th scope="col">Product Name</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">SKU / Barcode</th>
+                  <th scope="col">Price</th>
+                  <th scope="col">Stock</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryTableBody">
+                <tr>
+                  <td class="table-note" colspan="7">Loading products…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <aside class="category-panel">
+            <div class="category-panel-header">
+              <p class="eyebrow">Category Management</p>
+              <button class="secondary-button" type="button" onclick="addCategory()">Add Category</button>
+            </div>
+            <div class="category-list" id="categoryList" aria-label="Category tags"></div>
+          </aside>
+        </section>
+      </div>
+    </main>
+
+    <div class="modal-overlay hidden" id="productModal">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Product Details</p>
+            <h3 id="modalTitle">New inventory item</h3>
+          </div>
+          <button class="icon-button" type="button" aria-label="Close form" onclick="closeProductModal()">×</button>
+        </div>
+
+        <form class="product-form" id="addProductForm" onsubmit="event.preventDefault(); saveProduct();">
+          <div class="grid-two">
+            <label class="field-group">
+              <span>Product Image</span>
+              <input id="productImageInput" type="file" accept="image/*" onchange="previewProductImage(event)" />
+            </label>
+            <div class="image-preview" id="imagePreview">Image preview</div>
+          </div>
+
+          <label class="field-group">
+            <span>Image URL</span>
+            <input id="productImageUrl" type="text" placeholder="/images/product.jpg" />
+          </label>
+
+          <label class="field-group">
+            <span>Product Name</span>
+            <input id="productName" type="text" placeholder="Enter product name" required />
+          </label>
+
+          <label class="field-group">
+            <span>Description</span>
+            <textarea id="productDescription" rows="4" placeholder="Add a product description"></textarea>
+          </label>
+
+          <div class="grid-two">
+            <label class="field-group">
+              <span>Category</span>
+              <input id="productCategory" type="text" placeholder="Category name" required />
+            </label>
+            <label class="field-group">
+              <span>SKU / Barcode</span>
+              <input id="productSku" type="text" placeholder="SKU or barcode" required />
+            </label>
+          </div>
+
+          <div class="grid-three">
+            <label class="field-group">
+              <span>Cost Price</span>
+              <input id="productCost" type="number" step="0.01" min="0" placeholder="$0.00" />
+            </label>
+            <label class="field-group">
+              <span>Selling Price</span>
+              <input id="productPrice" type="number" step="0.01" min="0" placeholder="$0.00" required />
+            </label>
+            <label class="field-group">
+              <span>Stock Quantity</span>
+              <input id="productStock" type="number" min="0" placeholder="0" required />
+            </label>
+          </div>
+
+          <label class="field-group">
+            <span>Minimum Stock Alert</span>
+            <input id="productThreshold" type="number" min="0" placeholder="Low stock threshold" />
+          </label>
+
+          <div class="modal-actions">
+            <button class="secondary-button" type="button" onclick="closeProductModal()">Cancel</button>
+            <button class="primary-button" type="submit">Save Product</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast hidden" id="toastMessage" role="status" aria-live="polite"></div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
