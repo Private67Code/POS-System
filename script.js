@@ -327,6 +327,57 @@ function renderCart() {
     cartItem.querySelectorAll('.qty-button')[0].addEventListener('click', () => changeItemQuantity(item.productId, -1));
     cartItem.querySelectorAll('.qty-button')[1].addEventListener('click', () => changeItemQuantity(item.productId, 1));
     cartItem.querySelector('.remove-button').addEventListener('click', () => removeCartItem(item.productId));
+
+    // Allow clicking the quantity value to edit it directly for large adjustments
+    const qtyValueSpan = cartItem.querySelector('.qty-value');
+    qtyValueSpan.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const current = Number(item.quantity || 0);
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.value = String(current);
+      input.className = 'qty-edit-input';
+      input.style.width = '72px';
+      input.style.padding = '8px';
+      input.style.fontWeight = '700';
+      input.style.textAlign = 'center';
+      input.style.borderRadius = '10px';
+      input.style.border = '1px solid rgba(0,0,0,0.08)';
+
+      const commit = () => {
+        let v = Number(input.value);
+        if (!Number.isFinite(v) || Number.isNaN(v)) v = current;
+        v = Math.max(0, Math.floor(v));
+        if (v <= 0) {
+          removeCartItem(item.productId);
+        } else {
+          const target = state.cart.find((c) => c.productId === item.productId);
+          if (target) {
+            target.quantity = v;
+          }
+          renderCart();
+        }
+      };
+
+      const cancel = () => {
+        renderCart();
+      };
+
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          commit();
+        } else if (ev.key === 'Escape') {
+          cancel();
+        }
+      });
+
+      // Replace span with input for editing
+      qtyValueSpan.replaceWith(input);
+      input.focus();
+      input.select();
+    });
     cartContainer.appendChild(cartItem);
   });
 }

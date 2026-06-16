@@ -98,7 +98,7 @@ function sendBarcodeToPos(barcode) {
   updateScannerSessionUI();
 }
 
-function startCameraScan() {
+function startCameraPreview() {
   const video = document.getElementById('videoPreview');
   if (!video) return;
 
@@ -115,9 +115,9 @@ function startCameraScan() {
     updateCameraPermissionMessage('The scanner library is not available. Refresh the page and try again.', true);
     return;
   }
-
-  if (scannerState.scanning) {
-    updateMobileScannerStatus('Camera is already running');
+  // If camera already started as a preview, do nothing
+  if (scannerState.mediaStream) {
+    updateMobileScannerStatus('Camera preview already running');
     return;
   }
 
@@ -127,30 +127,45 @@ function startCameraScan() {
   const codeReader = new ReaderConstructor();
   scannerState.codeReader = codeReader;
 
-  codeReader
-    .decodeFromVideoDevice(undefined, video, (result, error) => {
-      if (result) {
-        const barcode = result.getText();
-        if (barcode) {
-          scannerState.lastBarcode = barcode;
-          sendBarcodeToPos(barcode);
-          updateMobileScannerStatus(`Scanned: ${barcode}`);
-          updateScannerSessionUI();
-        }
-      }
-      if (error) {
-        const notFoundException = ZXingGlobal && ZXingGlobal.NotFoundException;
-        if (!(notFoundException && error instanceof notFoundException)) {
-          console.warn('Scanner error:', error);
-        }
-      }
-    })
-    .then((subscription) => {
-      scannerState.decodeSubscription = subscription;
-      scannerState.videoInput = null;
-      updateMobileScannerStatus('Scanning for barcodes...');
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+    .then((stream) => {
+      scannerState.mediaStream = stream;
+      video.srcObject = stream;
+      video.play().catch(() => {});
+      updateMobileScannerStatus('Camera preview started — the detector is watching the frame');
       updateCameraPermissionMessage('', false);
       setScannerActionStates({ scanning: true });
+
+      // Start a continuous, silent detector that records the latest seen barcode
+      try {
+        codeReader.decodeFromVideoDevice(undefined, video, (result, error) => {
+          if (result) {
+            const barcode = result.getText();
+            if (barcode) {
+              scannerState.currentDetectedBarcode = barcode;
+              // update lastScan UI but do NOT auto-send
+              document.getElementById('lastScanValue').textContent = barcode;
+              // subtle status update without changing layout
+              const statusText = `Detected: ${barcode}`;
+              const status = document.getElementById('scannerConnectionStatus');
+              if (status) status.textContent = statusText;
+            }
+          }
+          if (error) {
+            const ZXingGlobal = (typeof window !== 'undefined' && (window.ZXingBrowser || window.ZXing)) || (typeof ZXing !== 'undefined' && ZXing);
+            const notFoundException = ZXingGlobal && ZXingGlobal.NotFoundException;
+            if (!(notFoundException && error instanceof notFoundException)) {
+              console.warn('Scanner error:', error);
+            }
+          }
+        }).then((subscription) => {
+          scannerState.decodeSubscription = subscription;
+        }).catch((err) => {
+          console.warn('Continuous detector failed to start:', err);
+        });
+      } catch (e) {
+        console.warn('Continuous detector initialization error', e);
+      }
     })
     .catch((error) => {
       const errorDetails = error && error.message ? `${error.name}: ${error.message}` : String(error);
@@ -163,7 +178,7 @@ function startCameraScan() {
         updateMobileScannerStatus('No suitable camera found.', true);
         updateCameraPermissionMessage('No compatible camera device is available.', true);
       } else {
-        updateMobileScannerStatus(`Unable to start camera: ${errorDetails}`, true);
+        updateMobileScannerStatus(`Unable to start camera preview: ${errorDetails}`, true);
         updateCameraPermissionMessage('Unable to start the camera. Check console logs for details.', true);
       }
       stopCameraScan();
@@ -203,6 +218,27 @@ function stopCameraScan() {
   setScannerActionStates({ scanning: false });
 }
 
+// Perform a single-shot scan by temporarily starting a decode subscription and stopping after first result
+function performSingleScan() {
+  const video = document.getElementById('videoPreview');
+  if (!video) return;
+  // Use the last-detected barcode and send it when user presses Scan
+  if (!scannerState.mediaStream) {
+    updateMobileScannerStatus('Camera not started. Press Start Camera first.', true);
+    return;
+  }
+  const barcode = scannerState.currentDetectedBarcode || scannerState.lastBarcode;
+  if (!barcode) {
+    updateMobileScannerStatus('No barcode currently visible. Aim the camera and try again.', true);
+    return;
+  }
+  // send and keep the detector running so user can scan more without layout reset
+  scannerState.lastBarcode = barcode;
+  sendBarcodeToPos(barcode);
+  updateMobileScannerStatus(`Sent: ${barcode}`);
+  updateScannerSessionUI();
+}
+
 function initializeScannerPage() {
   const urlParams = new URLSearchParams(window.location.search);
   const sessionId = urlParams.get('sessionId');
@@ -227,7 +263,12 @@ window.addEventListener('DOMContentLoaded', () => {
   const disconnectButton = document.getElementById('scannerDisconnectButton');
 
   if (startButton) {
-    startButton.addEventListener('click', startCameraScan);
+    startButton.addEventListener('click', startCameraPreview);
+  }
+
+  const singleScanButton = document.getElementById('scannerSingleScanButton');
+  if (singleScanButton) {
+    singleScanButton.addEventListener('click', performSingleScan);
   }
 
   if (restartButton) {
