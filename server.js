@@ -173,6 +173,15 @@ wss.on('connection', (ws, req) => {
 
   const session = getScannerSession(sessionId);
   const peer = role === 'pos' ? 'posClient' : 'phoneClient';
+  // If there's an existing open socket for this role, close it to avoid
+  // silently overwriting connections (e.g., multiple tabs with same sessionId)
+  if (session[peer] && session[peer].readyState === WebSocket.OPEN) {
+    try {
+      session[peer].close(1000, 'Replaced by new connection');
+    } catch (closeErr) {
+      // ignore errors when closing the old socket
+    }
+  }
   session[peer] = ws;
 
   if (role === 'pos') {

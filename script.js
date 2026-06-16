@@ -6,6 +6,7 @@ const state = {
   productSearch: '',
   inventorySearch: '',
   editingProductId: null,
+  discountPercent: 0,
 };
 
 const fallbackImage = '/images/placeholder.svg';
@@ -297,6 +298,10 @@ function renderCart() {
   document.getElementById('taxAmount').textContent = formatCurrency(summary.tax);
   document.getElementById('totalAmount').textContent = formatCurrency(summary.total);
 
+  // Keep discount input in sync if present
+  const discountInput = document.getElementById('discountInput');
+  if (discountInput) discountInput.value = String(state.discountPercent || 0);
+
   if (!state.cart.length) {
     cartContainer.innerHTML = '<div class="table-note">Your cart is empty. Add items from the product list to begin.</div>';
     return;
@@ -328,7 +333,7 @@ function renderCart() {
 
 function calculateTotals() {
   const subtotal = state.cart.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-  const discount = 0;
+  const discount = (Number(state.discountPercent || 0) / 100) * subtotal;
   const tax = Number(((subtotal - discount) * 0.08).toFixed(2));
   const total = Number((subtotal - discount + tax).toFixed(2));
   return { subtotal, discount, tax, total };
@@ -525,6 +530,10 @@ function previewProductImage(event) {
 
   const reader = new FileReader();
   reader.onload = function () {
+    // Use the base64 data URI only for the live preview in the browser.
+    // Do NOT persist base64 data URIs into the product record or SQLite database.
+    // A proper image upload endpoint should be implemented to store files
+    // on disk (e.g. /images) or in cloud storage and save a URL instead.
     preview.style.backgroundImage = `url('${reader.result}')`;
     preview.style.backgroundSize = 'cover';
     preview.style.backgroundPosition = 'center';
@@ -544,7 +553,17 @@ function saveProduct() {
     stock: Number(document.getElementById('productStock').value) || 0,
     cost: Number(document.getElementById('productCost').value) || 0,
     threshold: Number(document.getElementById('productThreshold').value) || 0,
-    image: document.getElementById('productImageUrl').value.trim() || fallbackImage,
+    // Don't persist base64 data URIs into SQLite. If the user pasted a
+    // data:image/... base64 string into the Image URL field, ignore it and
+    // fall back to the placeholder. A real image upload endpoint should be
+    // implemented to save uploaded files to the /images folder or cloud
+    // storage and then save the resulting URL here instead.
+    image: (function () {
+      const url = document.getElementById('productImageUrl').value.trim();
+      if (!url) return fallbackImage;
+      if (url.startsWith('data:')) return fallbackImage; // ignore base64 data URIs
+      return url;
+    })(),
   };
 
   if (!payload.name || !payload.category || !payload.sku) {
@@ -610,6 +629,7 @@ function processPayment(paymentMethod) {
 
   const payload = {
     paymentMethod,
+    discountPercent: Number(state.discountPercent || 0),
     items: state.cart.map((item) => ({
       productId: item.productId,
       name: item.name,
@@ -663,6 +683,17 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('inventorySearch').addEventListener('input', searchProducts);
   document.getElementById('connectScannerButton')?.addEventListener('click', connectPhoneScanner);
   document.getElementById('disconnectScannerButton')?.addEventListener('click', disconnectPhoneScanner);
+  // Discount input binding (if present)
+  const discountInput = document.getElementById('discountInput');
+  if (discountInput) {
+    discountInput.addEventListener('input', (e) => {
+      let v = Number(e.target.value);
+      if (Number.isNaN(v)) v = 0;
+      v = Math.max(0, Math.min(100, v));
+      state.discountPercent = v;
+      renderCart();
+    });
+  }
   renderScannerInfo();
   loadProducts();
 });
