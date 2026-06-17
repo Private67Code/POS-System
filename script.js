@@ -7,9 +7,59 @@ const state = {
   inventorySearch: '',
   editingProductId: null,
   discountPercent: 0,
+  cashierName: '',
+  productPage: 1,
+  productLimit: 24,
+  hasMoreProducts: false,
+  isShowingPopular: true,
 };
 
 const fallbackImage = '/images/placeholder.svg';
+
+function getStoredCashierName() {
+  return sessionStorage.getItem('cashierName') || '';
+}
+
+function updateBrandGreeting() {
+  const brandMessage = document.getElementById('brandMessage');
+  if (!brandMessage) return;
+  if (state.cashierName) {
+    brandMessage.textContent = `Welcome, ${state.cashierName} — thank you for using Retail POS System.`;
+  } else {
+    brandMessage.textContent = 'Retail POS System';
+  }
+}
+
+function showLoginModal() {
+  const loginModal = document.getElementById('loginModal');
+  if (!loginModal) return;
+  loginModal.classList.remove('hidden');
+}
+
+function hideLoginModal() {
+  const loginModal = document.getElementById('loginModal');
+  if (!loginModal) return;
+  loginModal.classList.add('hidden');
+}
+
+function submitCashierLogin() {
+  const loginInput = document.getElementById('cashierNameInput');
+  if (!loginInput) return;
+  const cashierName = loginInput.value.trim();
+  if (!cashierName) {
+    showToast('Please enter your name to continue.', 'danger');
+    return;
+  }
+
+  state.cashierName = cashierName;
+  sessionStorage.setItem('cashierName', cashierName);
+  updateBrandGreeting();
+  hideLoginModal();
+  showToast(`Welcome, ${cashierName}`);
+  state.productPage = 1;
+  state.isShowingPopular = true;
+  loadProducts();
+}
 
 function formatCurrency(value) {
   return `$${Number(value).toFixed(2)}`;
@@ -35,6 +85,7 @@ function toggleView(view) {
     posPage.classList.remove('active');
     inventoryPage.hidden = false;
     inventoryPage.classList.add('active');
+    loadTransactionHistory();
   } else {
     inventoryPage.hidden = true;
     inventoryPage.classList.remove('active');
@@ -266,7 +317,7 @@ function renderProductGrid() {
     const card = document.createElement('article');
     card.className = 'product-card';
     card.innerHTML = `
-      <img src="${product.image || fallbackImage}" alt="${product.name}" onerror="this.onerror=null;this.src='${fallbackImage}'" />
+      <img loading="lazy" src="${product.image || fallbackImage}" alt="${product.name}" onerror="this.onerror=null;this.src='${fallbackImage}'" />
       <div class="product-card-body">
         <p class="product-label">${product.name}</p>
         <p class="product-meta">SKU: ${product.sku}</p>
@@ -442,22 +493,65 @@ function holdTransaction() {
   showToast('Transaction held. Use the same cart to resume later.');
 }
 
-function fetchProducts() {
-  const query = new URLSearchParams();
-  if (state.selectedCategory && state.selectedCategory !== 'all') query.set('category', state.selectedCategory);
+function fetchProducts(options = {}) {
+  const page = Number(options.page || 1);
+  const append = Boolean(options.append);
+  const isInventoryView = !document.getElementById('inventoryPage').hidden;
   const searchValue = state.inventorySearch || state.productSearch;
-  if (searchValue) query.set('search', searchValue);
-  if (state.activeStockFilter && state.activeStockFilter !== 'all') query.set('stock', state.activeStockFilter);
+  const usePopular = !isInventoryView && !searchValue && state.selectedCategory === 'all' && state.activeStockFilter === 'all';
 
-  return fetch(`/api/products?${query.toString()}`)
-    .then((response) => response.json())
-    .then((products) => {
-      state.products = products;
+  const query = new URLSearchParams();
+  let endpoint = '/api/products';
+
+  if (usePopular) {
+    endpoint = '/api/products/popular';
+    query.set('limit', state.productLimit);
+    query.set('page', page);
+  } else {
+    if (state.selectedCategory && state.selectedCategory !== 'all') query.set('category', state.selectedCategory);
+    if (searchValue) query.set('search', searchValue);
+    if (state.activeStockFilter && state.activeStockFilter !== 'all') query.set('stock', state.activeStockFilter);
+    if (!isInventoryView) {
+      query.set('page', page);
+      query.set('limit', state.productLimit);
+    }
+  }
+
+  return fetch(`${endpoint}?${query.toString()}`)
+    .then((response) => {
+      if (response.status === 404 && usePopular) {
+        return fetch(`/api/products?page=${page}&limit=${state.productLimit}`);
+      }
+      if (!response.ok) {
+        throw new Error(`Product request failed with ${response.status}`);
+      }
+      state.hasMoreProducts = response.headers.get('X-Has-More') === 'true';
+      return response.json();
+    })
+    .then((data) => {
+      if (data && data.headers && data.body) {
+        // handle fallback response object if needed
+        state.hasMoreProducts = data.headers.get('X-Has-More') === 'true';
+      }
+      const products = Array.isArray(data) ? data : data;
+      if (!Array.isArray(products)) {
+        return Promise.reject(new Error('Unexpected products response'));
+      }
+      if (append) {
+        state.products = state.products.concat(products);
+      } else {
+        state.products = products;
+      }
+      state.productPage = page;
+      state.isShowingPopular = usePopular;
       renderCategoryPills();
       renderProductGrid();
       renderInventoryTable();
       renderInventoryCards();
-      renderCategoryList();
+      const loadMoreButton = document.getElementById('loadMoreProductsButton');
+      if (loadMoreButton) {
+        loadMoreButton.classList.toggle('hidden', !state.hasMoreProducts || isInventoryView);
+      }
     })
     .catch((error) => {
       console.error('Unable to fetch products:', error);
@@ -465,10 +559,25 @@ function fetchProducts() {
     });
 }
 
+function loadMoreProducts() {
+  if (!state.hasMoreProducts) return;
+  const nextPage = state.productPage + 1;
+  fetchProducts({ page: nextPage, append: true });
+}
+
+function logoutCashier() {
+  state.cashierName = '';
+  sessionStorage.removeItem('cashierName');
+  updateBrandGreeting();
+  showLoginModal();
+  showToast('Logged out successfully', 'success');
+}
+
 function searchProducts() {
   state.productSearch = document.getElementById('productSearchInput').value.trim();
   state.inventorySearch = document.getElementById('inventorySearch').value.trim();
-  return fetchProducts();
+  state.productPage = 1;
+  return fetchProducts({ page: 1, append: false });
 }
 
 function filterCategory(category) {
@@ -501,7 +610,7 @@ function renderInventoryTable() {
   inventoryTable.innerHTML = filteredProducts
     .map((product) => `
       <tr>
-        <td><img class="table-image" src="${product.image || fallbackImage}" alt="${product.name}" onerror="this.onerror=null;this.src='${fallbackImage}'" /></td>
+        <td><img loading="lazy" class="table-image" src="${product.image || fallbackImage}" alt="${product.name}" onerror="this.onerror=null;this.src='${fallbackImage}'" /></td>
         <td>${product.name}</td>
         <td>${product.category}</td>
         <td>${product.sku} / ${product.barcode}</td>
@@ -526,6 +635,7 @@ function renderInventoryCards() {
 
 function renderCategoryList() {
   const categoryList = document.getElementById('categoryList');
+  if (!categoryList) return;
   const categories = Array.from(new Set(state.products.map((product) => product.category.trim()).filter(Boolean))).sort();
   categoryList.innerHTML = categories
     .map((category) => `<button class="category-chip" type="button">${category}</button>`)
@@ -673,6 +783,12 @@ function deleteProduct(id) {
 }
 
 function processPayment(paymentMethod) {
+  if (!state.cashierName) {
+    showLoginModal();
+    showToast('Please log in before completing checkout.', 'danger');
+    return;
+  }
+
   if (!state.cart.length) {
     showToast('Cart is empty. Add products before checkout.', 'danger');
     return;
@@ -681,6 +797,7 @@ function processPayment(paymentMethod) {
   const payload = {
     paymentMethod,
     discountPercent: Number(state.discountPercent || 0),
+    cashierName: state.cashierName,
     items: state.cart.map((item) => ({
       productId: item.productId,
       name: item.name,
@@ -722,19 +839,71 @@ function processDigitalWalletPayment() {
 }
 
 function loadProducts() {
-  return fetchProducts();
+  return fetchProducts({ page: 1, append: false });
+}
+
+function loadTransactionHistory() {
+  return fetch('/api/transactions')
+    .then((response) => response.json())
+    .then((transactions) => {
+      renderTransactionHistory(transactions);
+    })
+    .catch((error) => {
+      console.error('Unable to load transaction history:', error);
+      showToast('Unable to load transaction history', 'danger');
+    });
+}
+
+function renderTransactionHistory(transactions) {
+  const historyBody = document.getElementById('historyTableBody');
+  if (!historyBody) return;
+
+  if (!transactions.length) {
+    historyBody.innerHTML = '<tr><td class="table-note" colspan="4">No recent transactions available.</td></tr>';
+    return;
+  }
+
+  historyBody.innerHTML = transactions
+    .map((transaction) => {
+      const dateTime = new Date(transaction.created_at).toLocaleString();
+      const itemSummary = transaction.items && transaction.items.length
+        ? transaction.items.map((item) => `${item.quantity}× ${item.name}`).join(', ')
+        : 'No items';
+      return `
+        <tr>
+          <td>${dateTime}</td>
+          <td>${transaction.cashier_name || 'Unknown'}</td>
+          <td>${itemSummary}</td>
+          <td>${formatCurrency(transaction.total)}</td>
+        </tr>
+      `;
+    })
+    .join('');
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  const inventoryButton = document.getElementById('inventoryButton');
-  if (inventoryButton) {
-    inventoryButton.addEventListener('click', () => toggleView('inventory'));
+  state.cashierName = getStoredCashierName();
+  updateBrandGreeting();
+  if (!state.cashierName) {
+    showLoginModal();
+  } else {
+    hideLoginModal();
   }
+
   document.getElementById('productSearchInput').addEventListener('input', searchProducts);
   document.getElementById('inventorySearch').addEventListener('input', searchProducts);
   document.getElementById('connectScannerButton')?.addEventListener('click', connectPhoneScanner);
   document.getElementById('disconnectScannerButton')?.addEventListener('click', disconnectPhoneScanner);
-  // Discount input binding (if present)
+  document.getElementById('loadMoreProductsButton')?.addEventListener('click', loadMoreProducts);
+
+  const loginForm = document.getElementById('loginForm');
+  if (loginForm) {
+    loginForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      submitCashierLogin();
+    });
+  }
+
   const discountInput = document.getElementById('discountInput');
   if (discountInput) {
     discountInput.addEventListener('input', (e) => {
@@ -745,6 +914,7 @@ window.addEventListener('DOMContentLoaded', () => {
       renderCart();
     });
   }
+
   renderScannerInfo();
   loadProducts();
 });

@@ -405,6 +405,22 @@ img { display:block; max-width:100%; height:auto; }
   border: 1px solid rgba(0,0,0,0.06);
 }
 
+.logout-link {
+  border: none;
+  background: none;
+  color: #ef4444;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.95rem;
+}
+
+.logout-link:hover,
+.logout-link:focus {
+  opacity: 0.85;
+}
+
 @media (max-width: 860px) {
   .fixed-inventory-button { left: 12px; bottom: 12px; padding: 10px 14px; }
 }
@@ -416,6 +432,29 @@ img { display:block; max-width:100%; height:auto; }
   .cart-controls { justify-content:start; }
   .scanner-video-card { min-height:240px; }
   .scanner-session-card { grid-template-columns:1fr; }
+}
+
+.load-more-row {
+  margin-top: var(--space-lg);
+  display: flex;
+  justify-content: center;
+}
+
+.login-card {
+  max-width: 420px;
+  width: 100%;
+}
+
+.login-form {
+  gap: var(--space-md);
+}
+
+.inventory-history-panel {
+  margin-top: var(--space-lg);
+}
+
+.history-table-wrapper {
+  overflow-x: auto;
 }
 
 /* subtle focus outlines for keyboard users */

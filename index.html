@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Retail POS System</title>
+  <meta name="description" content="Secure cashier login, checkout, inventory management, and sales history for in-store retail operations." />
+  <meta name="robots" content="noindex,nofollow" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -12,11 +14,31 @@
       <div class="brand-group">
         
         <div>
-          <h1>Retail POS System</h1>
+          <h1 id="brandMessage">Retail POS System</h1>
           <p class="subheading">Fast checkout and inventory management with modern retail controls.</p>
         </div>
       </div>
     </header>
+
+    <div class="modal-overlay hidden" id="loginModal">
+      <div class="modal-card login-card" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Cashier Login</p>
+            <h3 id="loginTitle">Welcome back</h3>
+          </div>
+        </div>
+        <form class="product-form login-form" id="loginForm" onsubmit="event.preventDefault(); submitCashierLogin();">
+          <label class="field-group">
+            <span>Cashier name</span>
+            <input id="cashierNameInput" type="text" placeholder="Enter your name" required />
+          </label>
+          <div class="modal-actions">
+            <button class="primary-button" type="submit">Continue</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <main class="page page-pos active" id="posPage">
       <div class="pos-layout">
@@ -26,6 +48,7 @@
               <p class="eyebrow">Point of Sale</p>
               <h2 id="pos-heading">Checkout</h2>
             </div>
+            <button class="logout-link" type="button" onclick="logoutCashier()">Log out</button>
           </div>
 
           <div class="search-row">
@@ -67,6 +90,9 @@
           </div>
 
           <div class="product-grid" id="productGrid" aria-label="Product catalogue"></div>
+          <div class="load-more-row">
+            <button class="primary-button hidden" type="button" id="loadMoreProductsButton">Load more products</button>
+          </div>
         </section>
 
         <aside class="cart-panel" aria-labelledby="cart-heading">
@@ -199,13 +225,31 @@
             </table>
           </div>
 
-          <aside class="category-panel">
-            <div class="category-panel-header">
-              <p class="eyebrow">Category Management</p>
-              <button class="secondary-button" type="button" onclick="addCategory()">Add Category</button>
+          <div class="inventory-history-panel" id="inventoryHistoryPanel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">History</p>
+                <h3>Recent transactions</h3>
+              </div>
             </div>
-            <div class="category-list" id="categoryList" aria-label="Category tags"></div>
-          </aside>
+            <div class="history-table-wrapper">
+              <table class="inventory-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Cashier</th>
+                    <th scope="col">Items Purchased</th>
+                    <th scope="col">Total</th>
+                  </tr>
+                </thead>
+                <tbody id="historyTableBody">
+                  <tr>
+                    <td class="table-note" colspan="4">Loading transaction history…</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </section>
       </div>
     </main>
@@ -286,7 +330,7 @@
     <div class="toast hidden" id="toastMessage" role="status" aria-live="polite"></div>
   </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="script.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+    <script src="script.js" defer></script>
 </body>
 </html>

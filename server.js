@@ -42,65 +42,82 @@ function initDatabase() {
     `);
 
     const ensureColumns = (callback) => {
-      db.all('PRAGMA table_info(products)', (err, columns) => {
-        if (err) return callback(err);
+      const tables = [
+        {
+          name: 'products',
+          columns: [
+            { name: 'description', sql: 'ALTER TABLE products ADD COLUMN description TEXT' },
+            { name: 'cost', sql: 'ALTER TABLE products ADD COLUMN cost REAL DEFAULT 0' },
+            { name: 'threshold', sql: 'ALTER TABLE products ADD COLUMN threshold INTEGER DEFAULT 0' },
+          ],
+        },
+        {
+          name: 'transactions',
+          columns: [
+            { name: 'cashier_name', sql: 'ALTER TABLE transactions ADD COLUMN cashier_name TEXT DEFAULT ""' },
+          ],
+        },
+      ];
 
-        const existingNames = columns.map((column) => column.name);
-        const tasks = [];
+      const ensureTable = (index) => {
+        if (index >= tables.length) return callback(null);
+        const table = tables[index];
 
-        if (!existingNames.includes('description')) {
-          tasks.push((next) => db.run('ALTER TABLE products ADD COLUMN description TEXT', next));
-        }
-        if (!existingNames.includes('cost')) {
-          tasks.push((next) => db.run('ALTER TABLE products ADD COLUMN cost REAL DEFAULT 0', next));
-        }
-        if (!existingNames.includes('threshold')) {
-          tasks.push((next) => db.run('ALTER TABLE products ADD COLUMN threshold INTEGER DEFAULT 0', next));
-        }
+        db.all(`PRAGMA table_info(${table.name})`, (err, columns) => {
+          if (err) return callback(err);
 
-        const runNext = () => {
-          if (!tasks.length) return callback(null);
-          const task = tasks.shift();
-          task((taskErr) => {
-            if (taskErr) return callback(taskErr);
-            runNext();
-          });
-        };
+          const existingNames = columns.map((column) => column.name);
+          const tasks = table.columns
+            .filter((column) => !existingNames.includes(column.name))
+            .map((column) => (next) => db.run(column.sql, next));
 
-        runNext();
-      });
+          const runNext = () => {
+            if (!tasks.length) return ensureTable(index + 1);
+            const task = tasks.shift();
+            task((taskErr) => {
+              if (taskErr) return callback(taskErr);
+              runNext();
+            });
+          };
+
+          runNext();
+        });
+      };
+
+      ensureTable(0);
     };
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT DEFAULT (datetime('now')),
+        payment_method TEXT,
+        subtotal REAL,
+        discount REAL,
+        tax REAL,
+        total REAL,
+        cashier_name TEXT DEFAULT ''
+      )
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS transaction_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        transaction_id INTEGER,
+        product_id TEXT,
+        name TEXT,
+        sku TEXT,
+        unit_price REAL,
+        quantity INTEGER,
+        line_total REAL,
+        FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+      )
+    `);
 
     ensureColumns((ensureErr) => {
       if (ensureErr) {
-        console.error('Failed to update product columns:', ensureErr.message);
+        console.error('Failed to update database columns:', ensureErr.message);
       }
-
-      db.run(`
-        CREATE TABLE IF NOT EXISTS transactions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          created_at TEXT DEFAULT (datetime('now')),
-          payment_method TEXT,
-          subtotal REAL,
-          discount REAL,
-          tax REAL,
-          total REAL
-        )
-      `);
-
-      db.run(`
-        CREATE TABLE IF NOT EXISTS transaction_items (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          transaction_id INTEGER,
-          product_id TEXT,
-          name TEXT,
-          sku TEXT,
-          unit_price REAL,
-          quantity INTEGER,
-          line_total REAL,
-          FOREIGN KEY (transaction_id) REFERENCES transactions(id)
-        )
-      `);
 
       const insertOrReplace = db.prepare(
         'INSERT OR REPLACE INTO products (id, name, sku, barcode, category, price, stock, image, description, cost, threshold) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -234,6 +251,8 @@ app.get('/api/products', (req, res) => {
   const category = String(req.query.category || 'all').trim().toLowerCase();
   const barcode = String(req.query.barcode || '').trim();
   const stockFilter = String(req.query.stock || 'all').trim().toLowerCase();
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.max(0, Number(req.query.limit) || 0);
 
   let sql = 'SELECT * FROM products';
   const conditions = [];
@@ -267,16 +286,74 @@ app.get('/api/products', (req, res) => {
 
   sql += ' ORDER BY name COLLATE NOCASE';
 
+  if (limit > 0) {
+    const offset = (page - 1) * limit;
+    sql += ' LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+  }
+
   db.all(sql, params, (err, rows) => {
     if (err) {
       console.error('Product query failed:', err.message);
       return res.status(500).json({ error: 'Unable to load products' });
     }
+    if (limit > 0) {
+      res.set('X-Current-Page', String(page));
+      res.set('X-Page-Limit', String(limit));
+      res.set('X-Has-More', rows.length === limit ? 'true' : 'false');
+    }
     res.json(rows);
   });
 });
 
-app.post('/api/products', checkAuth, (req, res) => {
+app.get('/api/products/popular', (req, res) => {
+  const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 20));
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const offset = (page - 1) * limit;
+  const daysAgo = Number(req.query.days || 30);
+
+  const sql = `
+    SELECT
+      ti.product_id AS id,
+      COALESCE(p.name, ti.name) AS name,
+      COALESCE(p.sku, ti.sku) AS sku,
+      COALESCE(p.category, '') AS category,
+      COALESCE(p.image, '') AS image,
+      COALESCE(p.price, ti.unit_price) AS price,
+      COALESCE(p.stock, 0) AS stock,
+      SUM(ti.quantity) AS total_sold
+    FROM transaction_items ti
+    INNER JOIN transactions t ON t.id = ti.transaction_id
+    LEFT JOIN products p ON p.id = ti.product_id
+    WHERE t.created_at >= date('now', ?)
+    GROUP BY ti.product_id
+    ORDER BY total_sold DESC, name COLLATE NOCASE
+    LIMIT ? OFFSET ?
+  `;
+
+  db.all(sql, [`-${daysAgo} days`, limit, offset], (err, rows) => {
+    if (err) {
+      console.error('Popular product query failed:', err.message);
+      return res.status(500).json({ error: 'Unable to load popular products' });
+    }
+    res.set('X-Current-Page', String(page));
+    res.set('X-Page-Limit', String(limit));
+    res.set('X-Has-More', rows.length === limit ? 'true' : 'false');
+    res.json(rows);
+  });
+});
+
+app.get('/api/categories', (req, res) => {
+  db.all('SELECT DISTINCT category FROM products ORDER BY LOWER(category)', [], (err, rows) => {
+    if (err) {
+      console.error('Category query failed:', err.message);
+      return res.status(500).json({ error: 'Unable to load categories' });
+    }
+    res.json(rows.map((row) => row.category));
+  });
+});
+
+app.post('/api/products', (req, res) => {
   const { name, sku, barcode, category, price, stock, image, description, cost, threshold } = req.body;
 
   if (!name || !sku || !barcode || !category) {
@@ -299,7 +376,7 @@ app.post('/api/products', checkAuth, (req, res) => {
   );
 });
 
-app.put('/api/products/:id', checkAuth, (req, res) => {
+app.put('/api/products/:id', (req, res) => {
   const id = req.params.id;
   const { name, sku, barcode, category, price, stock, image, description, cost, threshold } = req.body;
 
@@ -323,7 +400,7 @@ app.put('/api/products/:id', checkAuth, (req, res) => {
   );
 });
 
-app.delete('/api/products/:id', checkAuth, (req, res) => {
+app.delete('/api/products/:id', (req, res) => {
   const id = req.params.id;
   db.run('DELETE FROM products WHERE id = ?', [id], function (err) {
     if (err) {
@@ -337,7 +414,7 @@ app.delete('/api/products/:id', checkAuth, (req, res) => {
   });
 });
 
-app.post('/api/checkout', checkAuth, (req, res) => {
+app.post('/api/checkout', (req, res) => {
   const items = Array.isArray(req.body.items) ? req.body.items : [];
   const paymentMethod = String(req.body.paymentMethod || 'Unknown');
   const discountPercent = Number(req.body.discountPercent || 0);
@@ -351,9 +428,10 @@ app.post('/api/checkout', checkAuth, (req, res) => {
   const tax = Number(((subtotal - discount) * 0.08).toFixed(2));
   const total = Number((subtotal - discount + tax).toFixed(2));
 
+  const cashierName = String(req.body.cashierName || 'Unknown').trim() || 'Unknown';
   db.run(
-    'INSERT INTO transactions (payment_method, subtotal, discount, tax, total) VALUES (?, ?, ?, ?, ?)',
-    [paymentMethod, subtotal, discount, tax, total],
+    'INSERT INTO transactions (payment_method, subtotal, discount, tax, total, cashier_name) VALUES (?, ?, ?, ?, ?, ?)',
+    [paymentMethod, subtotal, discount, tax, total, cashierName],
     function (err) {
       if (err) {
         console.error('Checkout insert failed:', err.message);
@@ -408,7 +486,28 @@ app.get('/api/transactions', (req, res) => {
       console.error('Failed to load transactions:', err.message);
       return res.status(500).json({ error: 'Unable to load transactions' });
     }
-    res.json(rows);
+
+    const transactionPromises = rows.map((transaction) => {
+      return new Promise((resolve) => {
+        db.all(
+          'SELECT * FROM transaction_items WHERE transaction_id = ? ORDER BY id ASC',
+          [transaction.id],
+          (itemErr, items) => {
+            if (itemErr) {
+              console.error('Failed to load transaction items:', itemErr.message);
+              transaction.items = [];
+            } else {
+              transaction.items = items;
+            }
+            resolve();
+          }
+        );
+      });
+    });
+
+    Promise.all(transactionPromises).then(() => {
+      res.json(rows);
+    });
   });
 });
 
